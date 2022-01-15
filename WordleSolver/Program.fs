@@ -84,6 +84,7 @@ let words =
     File.ReadAllLines "words.txt"
     |> Array.map (fun s -> s.ToLower())
     |> Array.distinct
+    |> Array.sortBy (fun _ -> rng.Next())
 
 let answer = words[rng.NextInt64 words.LongLength |> int]
 printfn $"Answer is: %s{answer}"
