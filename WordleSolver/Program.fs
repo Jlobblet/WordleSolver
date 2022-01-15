@@ -50,7 +50,11 @@ type PlyResult =
     | Ongoing of string[]
         
 let makeGuess (words: string[]) (answer: string) =
-    let guess = words[rng.NextInt64 words.LongLength |> int]
+    let guess =
+        words
+        |> Array.sortByDescending (fun s -> s.ToCharArray() |> Array.distinct |> Array.length)
+        |> Array.head
+        
     let letterResults =
         guess.ToCharArray()
         |> Array.mapi (LetterResult.FromGuess answer)
