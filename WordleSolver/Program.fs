@@ -86,7 +86,7 @@ let words =
     |> Array.distinct
     |> Array.sortBy (fun _ -> rng.Next())
 
-let answer = words[rng.NextInt64 words.LongLength |> int]
+let answer = words[rng.Next words.Length]
 printfn $"Answer is: %s{answer}"
 let sw = Stopwatch.StartNew()
 solve answer words |> ignore
