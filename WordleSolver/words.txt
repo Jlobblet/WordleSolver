@@ -17254,4 +17254,4 @@ zygal
 zygon
 zymes
 zymic
-zyminz
+zymin
