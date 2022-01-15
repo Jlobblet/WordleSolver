@@ -52,7 +52,6 @@ type PlyResult =
 let makeGuess (words: string[]) (answer: string) =
     let guess =
         words
-        |> Array.sortByDescending (fun s -> s.ToCharArray() |> Array.distinct |> Array.length)
         |> Array.head
         
     let letterResults =
@@ -88,6 +87,7 @@ let words =
     File.ReadAllLines "words.txt"
     |> Array.map (fun s -> s.ToLower())
     |> Array.distinct
+    |> Array.sortByDescending (fun s -> s.ToCharArray() |> Array.distinct |> Array.length)
     |> Array.sortBy (fun _ -> rng.Next())
 
 let answer = words[rng.Next words.Length]
