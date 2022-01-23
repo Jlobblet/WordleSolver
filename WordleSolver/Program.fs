@@ -65,6 +65,7 @@ type PlyResult =
 
 let makeGuess (picker: string [] -> string) (words: string []) (answer: string) =
     let guess = picker words
+
     let letterResults =
         guess.ToCharArray()
         |> Array.mapi (LetterResult.FromGuess answer)
@@ -74,8 +75,9 @@ let makeGuess (picker: string [] -> string) (words: string []) (answer: string) 
       InitialLength = words.Length }
 
 let ply picker answer words =
-    let results = makeGuess picker words answer
-    //    printfn $"%A{results}"
+    let results =
+        makeGuess picker words answer
+//        |> tap (printfn "%A")
 
     if Array.forall ((=) Correct) results.LetterResults then
         Success results.Word
@@ -84,20 +86,14 @@ let ply picker answer words =
         Array.filter filter words |> Ongoing
 
 let solve picker words answer =
-    let rec inner words' i =
-        match i with
-        //        | 6 -> Failed
-        | _ ->
-            match ply picker answer words' with
-            | Ongoing remainingWords -> inner remainingWords (i + 1)
-            | s -> i, s
+    let rec inner words' acc =
+        let result = ply picker answer words'
 
-    inner words 0
+        match result with
+        | Ongoing remainingWords -> inner remainingWords (result :: acc)
+        | s -> s :: acc
 
-let words =
-    File.ReadAllLines "words.txt"
-    |> Array.Parallel.map (fun s -> s.ToLower())
-    |> Array.distinct
+    inner words [] |> List.rev
 
 let randomWord (words: string []) = words[rng.Next words.Length]
 
@@ -109,9 +105,8 @@ let mostCommonLetters (words: string []) =
         |> Map.ofSeq
 
     words
-    |> Array.sortByDescending (Seq.sumBy (fun c -> mapping[c]))
-    |> Array.head
-    
+    |> Array.maxBy (Seq.sumBy (fun c -> mapping[c]))
+
 let leastCommonLetters (words: string []) =
     let mapping =
         words
@@ -120,42 +115,101 @@ let leastCommonLetters (words: string []) =
         |> Map.ofSeq
 
     words
-    |> Array.sortBy (Seq.sumBy (fun c -> mapping[c]))
-    |> Array.head
+    |> Array.minBy (Seq.sumBy (fun c -> mapping[c]))
+
+let consonants =
+    [|'b'; 'c'; 'd'; 'f'; 'g'; 'h'; 'j'; 'k'; 'l'; 'm'; 'n'; 'p'; 'q'; 'r'; 's'; 't'; 'v'; 'w'; 'x'; 'y'; 'z'|]
+    |> Set.ofArray
+
+let consonantPreference (words: string[]) =
+    let strings = 
+        words
+        |> Array.groupBy (Seq.sumBy (fun c -> if consonants.Contains c then 1 else 0))
+        |> Array.maxBy fst
+        |> snd
+    strings[rng.Next strings.Length]
     
+let vowelPreference (words: string[]) =
+    let strings = 
+        words
+        |> Array.groupBy (Seq.sumBy (fun c -> if consonants.Contains c then 1 else 0))
+        |> Array.minBy fst
+        |> snd
+    strings[rng.Next strings.Length]
+    
+let combined (words: string[]) =
+    if words.Length > 1000 then
+        consonantPreference words
+    elif words.Length > 10 then
+        mostCommonLetters words
+    else
+        randomWord words
+        
+let tree (words: string[]) =
+    let words = 
+        [|0..4|]
+        |> Array.fold (fun (remainingWords: string[]) i ->
+            let letter = 
+                remainingWords
+                |> Array.countBy (fun w -> w[i])
+                |> Array.maxBy snd
+                |> fst
+            remainingWords
+            |> Array.filter (fun w -> w[i] = letter)) words
+    words[rng.Next words.Length]
 
+let words =
+    File.ReadAllLines "wordle-words.txt"
+    |> Array.Parallel.map (fun s -> s.ToLower())
+    |> Array.distinct
 
-let strategies: (string * (string [] -> string)) [] =
-    [| "random", randomWord
-       "first", Array.head
-       "most common letters", mostCommonLetters
-       "least common letters", leastCommonLetters |]
+let charts () =
+    let strategies: (string * (string [] -> string)) [] =
+        [| "random", randomWord
+//           "first", Array.head
+           "most common letters", mostCommonLetters
+           "least common letters", leastCommonLetters
+           "consonant preference", consonantPreference
+//           "vowel preference", vowelPreference
+//           "combined", combined
+           "tree", tree |]
 
-let n_runs = 1_000
+    let n_runs = 10_000
 
-let doRun (label, picker) =
-    let xs, ys =
-        [| 1 .. n_runs |]
-        |> Array.Parallel.map
-            (fun _ ->
+    let doRun (label, picker) =
+        let sw = Stopwatch.StartNew()
+        let xs, ys =
+            [| 1..n_runs |]
+            |> Array.Parallel.map (fun _ ->
                 words[rng.Next words.Length]
                 |> solve picker words
-                |> fst)
-        |> Array.countBy id
-        |> Array.unzip
+                |> List.length)
+            |> Array.countBy id
+            |> Array.unzip
 
-    Bar(x = xs, y = ys, name = label)
+        sw.Stop()
+        let successful = Array.zip xs ys |> Array.filter (fst >> (>=) 6) |> Array.sumBy snd |> float
+        let percentage = $"%.1f{100.0 * successful / (float n_runs)}%%"
+        Console.WriteLine $"%s{label} in %i{sw.ElapsedMilliseconds}ms, %s{percentage}"
+        Bar(x = xs, y = ys, name = $"%s{label} (%s{percentage})")
 
-let sw = Stopwatch.StartNew()
+    let sw = Stopwatch.StartNew()
 
-strategies
-|> Array.Parallel.map doRun
-|> Chart.Plot
-|> Chart.WithLayout(Layout(barmode = "group"))
-|> Chart.WithTitle "Moves to complete"
-|> Chart.WithXTitle "Number of moves"
-|> Chart.WithYTitle "Frequency"
-|> Chart.Show
+    strategies
+    |> Array.Parallel.map doRun
+    |> Chart.Plot
+    |> Chart.WithLayout(Layout(barmode = "group"))
+    |> Chart.WithTitle "Moves to complete"
+    |> Chart.WithXTitle "Number of moves"
+    |> Chart.WithYTitle "Frequency"
+    |> Chart.Show
 
-sw.Stop()
-printfn $"%i{sw.ElapsedMilliseconds}ms"
+    sw.Stop()
+    printfn $"%i{sw.ElapsedMilliseconds}ms"
+
+charts ()
+
+//let answer = "prick"
+//
+//solve randomWord words answer |> ignore
+//|> List.iter (printfn "%A")
